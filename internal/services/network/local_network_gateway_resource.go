@@ -205,26 +205,6 @@ func resourceLocalNetworkGatewayUpdate(d *pluginsdk.ResourceData, meta interface
 	pollerType := custompollers.NewLocalNetworkGatewayPoller(client, *id)
 	poller := pollers.NewPoller(pollerType, 10*time.Second, pollers.DefaultNumberOfDroppedConnectionsToAllow)
 
-	// There is a bug in the provider where the address space ordering doesn't change as expected.
-	// In the UI we have to remove the current list of addresses in the address space and re-add them in the new order and we'll copy that here.
-	if d.HasChange("address_space") {
-		// since the local network gateway cannot have both empty address prefix and empty BGP setting(confirmed with service team, it is by design),
-		// replace the empty address prefix with the first address prefix in the "address_space" list to avoid error.
-		if v := d.Get("address_space").([]interface{}); len(v) > 0 {
-			payload.Properties.LocalNetworkAddressSpace = &localnetworkgateways.AddressSpace{
-				AddressPrefixes: &[]string{v[0].(string)},
-			}
-		}
-
-		// This can be switched back over to CreateOrUpdateThenPoll once https://github.com/hashicorp/go-azure-sdk/issues/989 has been fixed
-		if _, err := client.CreateOrUpdate(ctx, *id, *payload); err != nil {
-			return fmt.Errorf("removing %s: %+v", id, err)
-		}
-		if err := poller.PollUntilDone(ctx); err != nil {
-			return err
-		}
-	}
-
 	payload.Properties.LocalNetworkAddressSpace = expandLocalNetworkGatewayAddressSpaces(d)
 
 	if _, err := client.CreateOrUpdate(ctx, *id, *payload); err != nil {
