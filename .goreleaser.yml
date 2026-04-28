@@ -47,7 +47,7 @@ release:
   ids:
     - none
 signs:
-  - args: ["--batch", "--yes", "--pinentry-mode", "loopback", "--armor", "--detach-sign", "--output", "${signature}", "${artifact}"]
+  - args: ["--batch", "--yes", "--pinentry-mode", "loopback", "--detach-sign", "--output", "${signature}", "${artifact}"]
     artifacts: checksum
     cmd: gpg
     signature: ${artifact}.sig
