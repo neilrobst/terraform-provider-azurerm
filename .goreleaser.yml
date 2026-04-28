@@ -46,5 +46,10 @@ release:
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
   ids:
     - none
+signs:
+  - args: ["--batch", "--yes", "--pinentry-mode", "loopback", "--armor", "--detach-sign", "--output", "${signature}", "${artifact}"]
+    artifacts: checksum
+    cmd: gpg
+    signature: ${artifact}.sig
 snapshot:
   name_template: "{{ .Tag }}-next"
