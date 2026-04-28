@@ -35,7 +35,7 @@ builds:
       - -s -w -X github.com/hashicorp/terraform-provider-azurerm/version.ProviderVersion={{.Version}}
     mod_timestamp: '{{ .CommitTimestamp }}'
 checksum:
-  algorithm: sha
+  algorithm: sha256
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
