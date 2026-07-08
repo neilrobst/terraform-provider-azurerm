@@ -61,7 +61,7 @@ func resourceVirtualMachine() *pluginsdk.Resource {
 	return &pluginsdk.Resource{
 		Create: resourceVirtualMachineCreateUpdate,
 		Read:   resourceVirtualMachineRead,
-		Update: resourceVirtualMachineCreateUpdate,
+		Update: resourceVirtualMachineUpdate,
 		Delete: resourceVirtualMachineDelete,
 		Importer: pluginsdk.ImporterValidatingResourceId(func(id string) error {
 			_, err := virtualmachines.ParseVirtualMachineID(id)
@@ -759,6 +759,163 @@ func resourceVirtualMachineCreateUpdate(d *pluginsdk.ResourceData, meta interfac
 		"type": provisionerType,
 		"host": ipAddress,
 	})
+
+	return resourceVirtualMachineRead(d, meta)
+}
+
+func resourceVirtualMachineUpdate(d *pluginsdk.ResourceData, meta interface{}) error {
+	client := meta.(*clients.Client).Compute.VirtualMachinesClient
+	ctx, cancel := timeouts.ForUpdate(meta.(*clients.Client).StopContext, d)
+	defer cancel()
+
+	id, err := virtualmachines.ParseVirtualMachineID(d.Id())
+	if err != nil {
+		return err
+	}
+
+	properties := virtualmachines.VirtualMachineProperties{}
+	update := virtualmachines.VirtualMachineUpdate{}
+	shouldUpdate := false
+	shouldUpdateProperties := false
+
+	if d.HasChange("vm_size") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		vmSize := d.Get("vm_size").(string)
+		properties.HardwareProfile = &virtualmachines.HardwareProfile{
+			VMSize: pointer.To(virtualmachines.VirtualMachineSizeTypes(vmSize)),
+		}
+	}
+
+	if d.HasChange("license_type") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		license := d.Get("license_type").(string)
+		properties.LicenseType = &license
+	}
+
+	if d.HasChange("boot_diagnostics") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		properties.DiagnosticsProfile = expandAzureRmVirtualMachineDiagnosticsProfile(d)
+	}
+
+	if d.HasChange("additional_capabilities") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		properties.AdditionalCapabilities = expandAzureRmVirtualMachineAdditionalCapabilities(d)
+	}
+
+	if d.HasChange("storage_os_disk") || d.HasChange("storage_data_disk") || d.HasChange("storage_image_reference") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		osDisk, err := expandAzureRmVirtualMachineOsDisk(d)
+		if err != nil {
+			return err
+		}
+
+		storageProfile := virtualmachines.StorageProfile{
+			OsDisk: osDisk,
+		}
+
+		if _, ok := d.GetOk("storage_image_reference"); ok {
+			imageRef, err2 := expandAzureRmVirtualMachineImageReference(d)
+			if err2 != nil {
+				return err2
+			}
+			storageProfile.ImageReference = imageRef
+		}
+
+		if _, ok := d.GetOk("storage_data_disk"); ok {
+			dataDisks, err2 := expandAzureRmVirtualMachineDataDisk(d)
+			if err2 != nil {
+				return err2
+			}
+			storageProfile.DataDisks = &dataDisks
+		}
+
+		properties.StorageProfile = &storageProfile
+	}
+
+	if d.HasChange("network_interface_ids") || d.HasChange("primary_network_interface_id") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		networkProfile := expandAzureRmVirtualMachineNetworkProfile(d)
+		properties.NetworkProfile = &networkProfile
+	}
+
+	if d.HasChange("os_profile") || d.HasChange("os_profile_windows_config") || d.HasChange("os_profile_linux_config") || d.HasChange("os_profile_secrets") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		osProfile, err := expandAzureRmVirtualMachineOsProfile(d)
+		if err != nil {
+			return err
+		}
+		properties.OsProfile = osProfile
+	}
+
+	if d.HasChange("availability_set_id") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		availabilitySet := d.Get("availability_set_id").(string)
+		properties.AvailabilitySet = &virtualmachines.SubResource{
+			Id: &availabilitySet,
+		}
+	}
+
+	if d.HasChange("proximity_placement_group_id") {
+		shouldUpdate = true
+		shouldUpdateProperties = true
+
+		properties.ProximityPlacementGroup = &virtualmachines.SubResource{
+			Id: pointer.To(d.Get("proximity_placement_group_id").(string)),
+		}
+	}
+
+	if d.HasChange("identity") {
+		shouldUpdate = true
+
+		identityExpanded, err := identity.ExpandSystemAndUserAssignedMap(d.Get("identity").([]interface{}))
+		if err != nil {
+			return fmt.Errorf("expanding `identity`: %+v", err)
+		}
+		update.Identity = identityExpanded
+	}
+
+	if d.HasChange("plan") {
+		shouldUpdate = true
+
+		update.Plan = expandAzureRmVirtualMachinePlan(d)
+	}
+
+	if d.HasChange("tags") {
+		shouldUpdate = true
+
+		update.Tags = tags.Expand(d.Get("tags").(map[string]interface{}))
+	}
+
+	if !shouldUpdate {
+		return resourceVirtualMachineRead(d, meta)
+	}
+
+	if shouldUpdateProperties {
+		update.Properties = &properties
+	}
+
+	locks.ByName(id.VirtualMachineName, compute2.VirtualMachineResourceName)
+	defer locks.UnlockByName(id.VirtualMachineName, compute2.VirtualMachineResourceName)
+
+	if err := client.UpdateThenPoll(ctx, *id, update, virtualmachines.DefaultUpdateOperationOptions()); err != nil {
+		return fmt.Errorf("updating %s: %+v", id, err)
+	}
 
 	return resourceVirtualMachineRead(d, meta)
 }
